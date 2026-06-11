@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitchen Items Available</title>
+<style>
+:root{--bg:#f7f7fb;--card:#fff;--text:#1f2937;--muted:#6b7280;--accent:#2563eb;--accent-dark:#1d4ed8;--border:#e5e7eb;--green-text:#166534;--green-bg:#dcfce7;--amber-text:#92400e;--amber-bg:#fef3c7;--red-text:#991b1b;--red-bg:#fee2e2}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+header{margin-bottom:18px}
+h1{margin:0 0 10px;font-size:2rem}
+p{margin:0;color:var(--muted);line-height:1.5}
+.note{margin-top:10px;font-size:.95rem}
+.sync-banner{margin:16px 0 0;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--muted);font-size:.95rem}
+.sync-banner.warning{background:#fff7ed;border-color:#fdba74;color:#9a3412}
+.sync-banner.error{background:#fef2f2;border-color:#fca5a5;color:var(--red-text)}
+.controls{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
+.controls input{flex:1;min-width:240px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.05)}
+.card img{width:100%;height:280px;object-fit:cover;background:#f3f4f6;display:block}
+.card-body{padding:14px}
+.card h3{font-size:1.02rem;margin:0 0 8px;min-height:2.4em}
+.status{display:inline-block;margin:0 0 12px;padding:6px 10px;border-radius:999px;font-size:.9rem;font-weight:600}
+.status.available{color:var(--green-text);background:var(--green-bg)}
+.status.claimed{color:var(--amber-text);background:var(--amber-bg)}
+.status.error{color:var(--red-text);background:var(--red-bg)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.actions button{appearance:none;border:none;border-radius:10px;padding:10px 12px;font:inherit;font-size:.92rem;cursor:pointer}
+.copy-btn{background:#eef2ff;color:#1e40af}
+.claim-btn{background:var(--accent);color:#fff}
+.claim-btn:hover:not(:disabled){background:var(--accent-dark)}
+.actions button:disabled{opacity:.6;cursor:not-allowed}
+footer{margin:28px 0 8px;color:var(--muted);font-size:.92rem}
+.hidden{display:none!important}
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px;z-index:1000}
+.modal{width:min(100%,420px);background:#fff;border-radius:18px;padding:22px;box-shadow:0 24px 60px rgba(15,23,42,.2)}
+.modal h2{margin:0 0 8px;font-size:1.35rem}
+.modal p{margin:0 0 14px}
+.modal form{display:grid;gap:12px}
+.modal label{font-size:.92rem;font-weight:600}
+.modal input{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:1rem}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px}
+.ghost-btn{background:#f3f4f6!important;color:var(--text)!important}
+.error-text{min-height:1.25em;color:var(--red-text);font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Kitchen Items Available</h1>
+    <p>I'm moving out and sharing these kitchen spices, pantry items, and baking supplies with friends first. Browse below and use the claim button to reserve anything you want.</p>
+    <p class="note"><strong>Tip:</strong> Search by item name, use "Copy item name" if you also want to message me.</p>
+    <div class="sync-banner warning" id="syncBanner">Add your Google Apps Script web app URL in the page code to turn on shared claim status.</div>
+  </header>
+
+  <div class="controls">
+    <input id="search" type="search" placeholder="Search items..." oninput="filterItems()">
+  </div>
+
+  <section class="grid" id="grid"></section>
+  <footer id="itemCount"></footer>
+</div>
+
+<script>
+const CLAIMS_API_URL = "https://script.google.com/macros/s/AKfycbxz80u6sefgWvxG1dgaE4LwjEMyoulNTx7NEPgG2i5H7PDEsAlS-5QdXMjB595F3k-4DA/exec";
+const CLAIMS_REFRESH_MS = 60000;
+
+const ITEMS = [
+  { id: "01-fennel-seeds", name: "Fennel Seeds" },
+  { id: "02-flax-seeds", name: "Flax Seeds" },
+  { id: "03-ajwain", name: "Ajwain" },
+  { id: "04-methi-seeds", name: "Methi Seeds" },
+  { id: "05-kalonji", name: "Kalonji" },
+  { id: "06-dalia-split", name: "Dalia Split" },
+  { id: "07-badam-drink-mix", name: "Badam Drink Mix" },
+  { id: "08-multi-colored-peppers-mini-sachets", name: "Multi-Colored Peppers (Mini Sachets)" },
+  { id: "09-quick-rolled-oats", name: "Quick Rolled Oats" },
+  { id: "10-panipuri", name: "Panipuri" },
+  { id: "11-star-anise", name: "Star Anise" },
+  { id: "12-multi-sprinkles", name: "Multi Sprinkles" },
+  { id: "13-black-peppers", name: "Black Peppers" },
+  { id: "14-cinnamon-sticks", name: "Cinnamon Sticks" },
+  { id: "15-black-cardamom", name: "Black Cardamom" },
+  { id: "16-green-cardamom", name: "Green Cardamom" },
+  { id: "17-kala-jeera", name: "Kala Jeera" },
+  { id: "18-wet-tamarind", name: "Wet Tamarind" },
+  { id: "19-javantri-mace", name: "Javantri (Mace)" },
+  { id: "20-biryani-leaves", name: "Biryani Leaves" },
+  { id: "21-white-corn-flour", name: "White Corn Flour" },
+  { id: "22-urad-daal", name: "Urad Daal" },
+  { id: "23-baking-mix-1", name: "Baking Mix 1" },
+  { id: "24-baking-mix-2", name: "Baking Mix 2" },
+  { id: "25-triple-chocolate-fudge-cake-mix", name: "Triple Chocolate Fudge Cake Mix" },
+  { id: "26-funfetti-cake-mix", name: "Funfetti Cake Mix" },
+  { id: "27-elbow-macaroni", name: "Elbow Macaroni" },
+  { id: "28-toast-rusks-bread-rounds", name: "Toast Rusks / Bread Rounds" },
+  { id: "29-kabuli-chana", name: "Kabuli Chana" },
+  { id: "30-white-peas-dried-peas", name: "White Peas / Dried Peas" },
+  { id: "31-gluten-free-chapati-flour", name: "Gluten-Free Chapati Flour" },
+  { id: "32-all-purpose-flour", name: "All Purpose Flour" },
+  { id: "33-raisins-bag", name: "Raisins (Bag)" },
+  { id: "34-sunflower-kernels", name: "Sunflower Kernels" },
+  { id: "35-raisins-jar", name: "Raisins (Jar)" },
+  { id: "36-poppy-seeds", name: "Poppy Seeds" },
+  { id: "37-sesame-seeds", name: "Sesame Seeds" }
+];
+
+let activeClaim = null;
+
+initPage();
+
+function initPage() {
+  renderItems();
+  setupClaimModal();
+
+  if (CLAIMS_API_URL) {
+    updateSyncBanner("Loading shared claim status...");
+    loadClaims();
+    window.setInterval(loadClaims, CLAIMS_REFRESH_MS);
+  } else {
+    updateSyncBanner("Add your Google Apps Script web app URL in the page code to turn on shared claim status.", "warning");
+  }
+}
+
+function renderItems() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = ITEMS.map(item => {
+    return (
+      '<article class="card" data-item-id="' + escapeHtml(item.id) + '" data-name="' + escapeHtml(item.name.toLowerCase()) + '">' +
+        '<img src="images/' + escapeHtml(item.id) + '.jpg" alt="' + escapeHtml(item.name) + '">' +
+        '<div class="card-body">' +
+          '<h3>' + escapeHtml(item.name) + '</h3>' +
+          '<p class="status available">Available</p>' +
+          '<div class="actions">' +
+            '<button type="button" class="copy-btn" data-copy-name="' + escapeHtml(item.name) + '">Copy item name</button>' +
+            '<button type="button" class="claim-btn" data-claim-id="' + escapeHtml(item.id) + '">Claim this item</button>' +
+          '</div>' +
+        '</div>' +
+      '</article>'
+    );
+  }).join("");
+
+  document.getElementById("itemCount").textContent = "Total items listed: " + ITEMS.length;
+
+  grid.querySelectorAll("[data-copy-name]").forEach(button => {
+    button.addEventListener("click", () => copyText(button.dataset.copyName));
+  });
+
+  grid.querySelectorAll("[data-claim-id]").forEach(button => {
+    button.addEventListener("click", () => {
+      const item = ITEMS.find(entry => entry.id === button.dataset.claimId);
+      if (item) {
+        openClaimModal(item);
+      }
+    });
+  });
+
+  if (!CLAIMS_API_URL) {
+    grid.querySelectorAll(".claim-btn").forEach(button => {
+      button.disabled = true;
+      button.textContent = "Claiming not set up";
+    });
+  }
+}
+
+function setupClaimModal() {
+  const modal = document.createElement("div");
+  modal.id = "claimModalBackdrop";
+  modal.className = "modal-backdrop hidden";
+  modal.innerHTML =
+    '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="claimModalTitle">' +
+      '<h2 id="claimModalTitle">Claim item</h2>' +
+      '<p id="claimModalText">Enter your name to claim this item.</p>' +
+      '<form id="claimForm">' +
+        '<div>' +
+          '<label for="claimerName">Your name</label>' +
+          '<input id="claimerName" name="claimerName" type="text" maxlength="80" placeholder="Your name" required>' +
+        '</div>' +
+        '<div id="claimError" class="error-text"></div>' +
+        '<div class="modal-actions">' +
+          '<button type="button" class="ghost-btn" id="cancelClaimBtn">Cancel</button>' +
+          '<button type="submit" class="claim-btn" id="submitClaimBtn">Confirm claim</button>' +
+        '</div>' +
+      '</form>' +
+    '</div>';
+
+  document.body.appendChild(modal);
+  document.getElementById("cancelClaimBtn").addEventListener("click", closeClaimModal);
+  document.getElementById("claimForm").addEventListener("submit", submitClaim);
+
+  modal.addEventListener("click", event => {
+    if (event.target === modal) {
+      closeClaimModal();
+    }
+  });
+}
+
+function filterItems() {
+  const query = document.getElementById("search").value.toLowerCase().trim();
+  document.querySelectorAll(".card").forEach(card => {
+    card.classList.toggle("hidden", query && !card.dataset.name.includes(query));
+  });
+}
+
+function openClaimModal(item) {
+  if (!CLAIMS_API_URL) {
+    alert("Claiming is not active yet. Add your Google Apps Script web app URL in the page code first.");
+    return;
+  }
+
+  activeClaim = item;
+  document.getElementById("claimModalText").textContent = 'Enter your name to claim "' + item.name + '".';
+  document.getElementById("claimError").textContent = "";
+  document.getElementById("claimerName").value = "";
+  document.getElementById("claimModalBackdrop").classList.remove("hidden");
+  document.getElementById("claimerName").focus();
+}
+
+function closeClaimModal() {
+  activeClaim = null;
+  document.getElementById("claimModalBackdrop").classList.add("hidden");
+}
+
+async function loadClaims() {
+  if (!CLAIMS_API_URL) {
+    return;
+  }
+
+  try {
+    const response = await fetch(CLAIMS_API_URL + "?action=list", { cache: "no-store" });
+    const data = await response.json();
+    if (!data.ok || !Array.isArray(data.items)) {
+      throw new Error(data.message || "Invalid claim status response.");
+    }
+
+    const itemsById = new Map(data.items.map(item => [item.item_id, item]));
+    document.querySelectorAll(".card").forEach(card => {
+      const item = itemsById.get(card.dataset.itemId) || { status: "Available" };
+      renderClaimState(card, item);
+    });
+
+    updateSyncBanner("Shared claim status updated.");
+  } catch (error) {
+    console.error(error);
+    updateSyncBanner("Could not load shared claim status. Check the Google Apps Script URL and deployment permissions.", "error");
+  }
+}
+
+async function submitClaim(event) {
+  event.preventDefault();
+
+  if (!activeClaim) {
+    return;
+  }
+
+  const claimedBy = document.getElementById("claimerName").value.trim();
+  const errorEl = document.getElementById("claimError");
+  const submitButton = document.getElementById("submitClaimBtn");
+
+  if (!claimedBy) {
+    errorEl.textContent = "Please enter your name.";
+    return;
+  }
+
+  errorEl.textContent = "";
+  submitButton.disabled = true;
+  submitButton.textContent = "Saving...";
+
+  try {
+    const body = new URLSearchParams({
+      action: "claim",
+      item_id: activeClaim.id,
+      item_name: activeClaim.name,
+      claimed_by: claimedBy
+    });
+
+    const response = await fetch(CLAIMS_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body
+    });
+    const data = await response.json();
+
+    if (!data.ok) {
+      if (data.error === "already_claimed") {
+        errorEl.textContent = activeClaim.name + " was already claimed. Refreshing status...";
+        await loadClaims();
+        return;
+      }
+      throw new Error(data.message || "Could not save claim.");
+    }
+
+    const claimedCard = getCardByItemId(activeClaim.id);
+    if (claimedCard) {
+      renderClaimState(claimedCard, data.item);
+    }
+
+    const claimedItemName = activeClaim.name;
+    closeClaimModal();
+    updateSyncBanner(claimedItemName + " is now claimed by " + claimedBy + ".");
+    await loadClaims();
+  } catch (error) {
+    console.error(error);
+    errorEl.textContent = "Could not save your claim. Please try again.";
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "Confirm claim";
+  }
+}
+
+function renderClaimState(card, item) {
+  const status = String(item.status || "Available").toLowerCase();
+  const claimed = status === "claimed";
+  const claimedBy = String(item.claimed_by || "").trim();
+  const statusEl = card.querySelector(".status");
+  const claimButton = card.querySelector(".claim-btn");
+
+  statusEl.className = "status " + (claimed ? "claimed" : "available");
+  statusEl.textContent = claimed ? ("Claimed" + (claimedBy ? " by " + claimedBy : "")) : "Available";
+  claimButton.disabled = claimed || !CLAIMS_API_URL;
+  claimButton.textContent = claimed ? "Already claimed" : (CLAIMS_API_URL ? "Claim this item" : "Claiming not set up");
+}
+
+function getCardByItemId(itemId) {
+  return document.querySelector('.card[data-item-id="' + cssEscape(itemId) + '"]');
+}
+
+function updateSyncBanner(message, variant) {
+  const banner = document.getElementById("syncBanner");
+  banner.textContent = message;
+  banner.className = "sync-banner" + (variant ? " " + variant : "");
+}
+
+function copyText(name) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(name).then(() => {
+      alert("Copied: " + name);
+    }).catch(() => {
+      alert(name);
+    });
+    return;
+  }
+  alert(name);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function cssEscape(value) {
+  if (window.CSS && typeof window.CSS.escape === "function") {
+    return window.CSS.escape(value);
+  }
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+</script>
+</body>
+</html>
