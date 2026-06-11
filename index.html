@@ -104,7 +104,11 @@ const ITEMS = [
   { id: "34-sunflower-kernels", name: "Sunflower Kernels" },
   { id: "35-raisins-jar", name: "Raisins (Jar)" },
   { id: "36-poppy-seeds", name: "Poppy Seeds" },
-  { id: "37-sesame-seeds", name: "Sesame Seeds" }
+  { id: "37-sesame-seeds", name: "Sesame Seeds" },
+  { id: "38-baking-soda", name: "Baking Soda", image: "38-Baking Soda.jpeg" },
+  { id: "39-amchur-powder", name: "Amchur Powder", image: "39-Amchur Powder.jpeg" },
+  { id: "40-peanuts", name: "Peanuts", image: "40-Peanuts.jpeg" },
+  { id: "41-zaatar", name: "Zaatar", image: "41-Zaatar.jpeg" }
 ];
 
 let activeClaim = null;
@@ -127,9 +131,10 @@ function initPage() {
 function renderItems() {
   const grid = document.getElementById("grid");
   grid.innerHTML = ITEMS.map(item => {
+    const imagePath = item.image ? "images/" + item.image : "images/" + item.id + ".jpg";
     return (
       '<article class="card" data-item-id="' + escapeHtml(item.id) + '" data-name="' + escapeHtml(item.name.toLowerCase()) + '">' +
-        '<img src="images/' + escapeHtml(item.id) + '.jpg" alt="' + escapeHtml(item.name) + '">' +
+        '<img src="' + escapeHtml(imagePath) + '" alt="' + escapeHtml(item.name) + '">' +
         '<div class="card-body">' +
           '<h3>' + escapeHtml(item.name) + '</h3>' +
           '<p class="status available">Available</p>' +

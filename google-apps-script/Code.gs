@@ -37,7 +37,11 @@ const ITEMS = [
   ["34-sunflower-kernels", "Sunflower Kernels"],
   ["35-raisins-jar", "Raisins (Jar)"],
   ["36-poppy-seeds", "Poppy Seeds"],
-  ["37-sesame-seeds", "Sesame Seeds"]
+  ["37-sesame-seeds", "Sesame Seeds"],
+  ["38-baking-soda", "Baking Soda"],
+  ["39-amchur-powder", "Amchur Powder"],
+  ["40-peanuts", "Peanuts"],
+  ["41-zaatar", "Zaatar"]
 ];
 
 function doGet(e) {
