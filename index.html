@@ -18,6 +18,8 @@ p{margin:0;color:var(--muted);line-height:1.5}
 .sync-banner.error{background:#fef2f2;border-color:#fca5a5;color:var(--red-text)}
 .controls{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
 .controls input{flex:1;min-width:240px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:1rem}
+.items-section{margin-top:20px}
+.section-heading{margin:0 0 14px;font-size:1.18rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.05)}
 .card img{width:100%;height:280px;object-fit:cover;background:#f3f4f6;display:block}
@@ -33,6 +35,11 @@ p{margin:0;color:var(--muted);line-height:1.5}
 .claim-btn{background:var(--accent);color:#fff}
 .claim-btn:hover:not(:disabled){background:var(--accent-dark)}
 .actions button:disabled{opacity:.6;cursor:not-allowed}
+.claimed-wrap{margin-top:28px;border:1px solid var(--border);border-radius:16px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.04)}
+.claimed-wrap summary{padding:16px 18px;cursor:pointer;font-weight:600;list-style-position:inside}
+.claimed-wrap[open] summary{border-bottom:1px solid var(--border)}
+.claimed-body{padding:18px}
+.empty-text{margin:0;color:var(--muted)}
 footer{margin:28px 0 8px;color:var(--muted);font-size:.92rem}
 .hidden{display:none!important}
 .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:18px;z-index:1000}
@@ -60,7 +67,19 @@ footer{margin:28px 0 8px;color:var(--muted);font-size:.92rem}
     <input id="search" type="search" placeholder="Search items..." oninput="filterItems()">
   </div>
 
-  <section class="grid" id="grid"></section>
+  <section class="items-section">
+    <h2 class="section-heading" id="availableHeading">Available Items</h2>
+    <section class="grid" id="availableGrid"></section>
+  </section>
+
+  <details class="claimed-wrap" id="claimedWrap">
+    <summary id="claimedSummary">Show Claimed (0)</summary>
+    <div class="claimed-body">
+      <p class="empty-text" id="claimedEmpty">No claimed items yet.</p>
+      <section class="grid" id="claimedGrid"></section>
+    </div>
+  </details>
+
   <footer id="itemCount"></footer>
 </div>
 
@@ -112,12 +131,15 @@ const ITEMS = [
 ];
 
 let activeClaim = null;
+let itemStateById = new Map();
 
 initPage();
 
 function initPage() {
+  seedItemState();
   renderItems();
   setupClaimModal();
+  document.getElementById("claimedWrap").addEventListener("toggle", updateClaimedSummary);
 
   if (CLAIMS_API_URL) {
     updateSyncBanner("Loading shared claim status...");
@@ -128,32 +150,40 @@ function initPage() {
   }
 }
 
+function seedItemState() {
+  itemStateById = new Map();
+  ITEMS.forEach(item => {
+    itemStateById.set(item.id, {
+      item_id: item.id,
+      item_name: item.name,
+      status: "Available",
+      claimed_by: "",
+      claimed_at: ""
+    });
+  });
+}
+
 function renderItems() {
-  const grid = document.getElementById("grid");
-  grid.innerHTML = ITEMS.map(item => {
-    const imagePath = item.image ? "images/" + item.image : "images/" + item.id + ".jpg";
-    return (
-      '<article class="card" data-item-id="' + escapeHtml(item.id) + '" data-name="' + escapeHtml(item.name.toLowerCase()) + '">' +
-        '<img src="' + escapeHtml(imagePath) + '" alt="' + escapeHtml(item.name) + '">' +
-        '<div class="card-body">' +
-          '<h3>' + escapeHtml(item.name) + '</h3>' +
-          '<p class="status available">Available</p>' +
-          '<div class="actions">' +
-            '<button type="button" class="copy-btn" data-copy-name="' + escapeHtml(item.name) + '">Copy item name</button>' +
-            '<button type="button" class="claim-btn" data-claim-id="' + escapeHtml(item.id) + '">Claim this item</button>' +
-          '</div>' +
-        '</div>' +
-      '</article>'
-    );
-  }).join("");
+  const availableGrid = document.getElementById("availableGrid");
+  const claimedGrid = document.getElementById("claimedGrid");
+  const claimedEmpty = document.getElementById("claimedEmpty");
+  const displayItems = ITEMS.map(buildDisplayItem);
+  const availableItems = displayItems.filter(item => !isClaimed(item));
+  const claimedItems = displayItems.filter(item => isClaimed(item));
 
-  document.getElementById("itemCount").textContent = "Total items listed: " + ITEMS.length;
+  availableGrid.innerHTML = availableItems.map(renderCard).join("");
+  claimedGrid.innerHTML = claimedItems.map(renderCard).join("");
+  claimedEmpty.classList.toggle("hidden", claimedItems.length > 0);
 
-  grid.querySelectorAll("[data-copy-name]").forEach(button => {
+  document.getElementById("availableHeading").textContent = "Available Items (" + availableItems.length + ")";
+  document.getElementById("itemCount").textContent = "Total items listed: " + displayItems.length;
+  updateClaimedSummary(claimedItems.length);
+
+  document.querySelectorAll("[data-copy-name]").forEach(button => {
     button.addEventListener("click", () => copyText(button.dataset.copyName));
   });
 
-  grid.querySelectorAll("[data-claim-id]").forEach(button => {
+  document.querySelectorAll("[data-claim-id]").forEach(button => {
     button.addEventListener("click", () => {
       const item = ITEMS.find(entry => entry.id === button.dataset.claimId);
       if (item) {
@@ -163,11 +193,43 @@ function renderItems() {
   });
 
   if (!CLAIMS_API_URL) {
-    grid.querySelectorAll(".claim-btn").forEach(button => {
+    document.querySelectorAll(".claim-btn").forEach(button => {
       button.disabled = true;
       button.textContent = "Claiming not set up";
     });
   }
+
+  filterItems();
+}
+
+function renderCard(item) {
+    const imagePath = item.image ? "images/" + item.image : "images/" + item.id + ".jpg";
+  const claimed = isClaimed(item);
+  return (
+    '<article class="card" data-item-id="' + escapeHtml(item.id) + '" data-name="' + escapeHtml(item.name.toLowerCase()) + '">' +
+      '<img src="' + escapeHtml(imagePath) + '" alt="' + escapeHtml(item.name) + '">' +
+      '<div class="card-body">' +
+        '<h3>' + escapeHtml(item.name) + '</h3>' +
+        '<p class="status ' + (claimed ? 'claimed' : 'available') + '">' + escapeHtml(claimed ? buildClaimedText(item) : 'Available') + '</p>' +
+        '<div class="actions">' +
+          '<button type="button" class="copy-btn" data-copy-name="' + escapeHtml(item.name) + '">Copy item name</button>' +
+          '<button type="button" class="claim-btn" data-claim-id="' + escapeHtml(item.id) + '"' + (claimed ? ' disabled' : '') + '>' + escapeHtml(claimed ? 'Already claimed' : 'Claim this item') + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</article>'
+  );
+}
+
+function buildDisplayItem(item) {
+  const state = itemStateById.get(item.id) || {};
+  return {
+    id: item.id,
+    name: item.name,
+    image: item.image,
+    status: String(state.status || "Available"),
+    claimed_by: String(state.claimed_by || ""),
+    claimed_at: String(state.claimed_at || "")
+  };
 }
 
 function setupClaimModal() {
@@ -207,6 +269,12 @@ function filterItems() {
   document.querySelectorAll(".card").forEach(card => {
     card.classList.toggle("hidden", query && !card.dataset.name.includes(query));
   });
+
+  const claimedWrap = document.getElementById("claimedWrap");
+  const hasClaimedMatches = Array.from(document.querySelectorAll("#claimedGrid .card")).some(card => !card.classList.contains("hidden"));
+  if (query && hasClaimedMatches) {
+    claimedWrap.open = true;
+  }
 }
 
 function openClaimModal(item) {
@@ -240,11 +308,8 @@ async function loadClaims() {
       throw new Error(data.message || "Invalid claim status response.");
     }
 
-    const itemsById = new Map(data.items.map(item => [item.item_id, item]));
-    document.querySelectorAll(".card").forEach(card => {
-      const item = itemsById.get(card.dataset.itemId) || { status: "Available" };
-      renderClaimState(card, item);
-    });
+    syncItemState(data.items);
+    renderItems();
 
     updateSyncBanner("Shared claim status updated.");
   } catch (error) {
@@ -297,12 +362,9 @@ async function submitClaim(event) {
       throw new Error(data.message || "Could not save claim.");
     }
 
-    const claimedCard = getCardByItemId(activeClaim.id);
-    if (claimedCard) {
-      renderClaimState(claimedCard, data.item);
-    }
-
     const claimedItemName = activeClaim.name;
+    setItemState(data.item);
+    renderItems();
     closeClaimModal();
     updateSyncBanner(claimedItemName + " is now claimed by " + claimedBy + ".");
     await loadClaims();
@@ -315,21 +377,38 @@ async function submitClaim(event) {
   }
 }
 
-function renderClaimState(card, item) {
-  const status = String(item.status || "Available").toLowerCase();
-  const claimed = status === "claimed";
-  const claimedBy = String(item.claimed_by || "").trim();
-  const statusEl = card.querySelector(".status");
-  const claimButton = card.querySelector(".claim-btn");
-
-  statusEl.className = "status " + (claimed ? "claimed" : "available");
-  statusEl.textContent = claimed ? ("Claimed" + (claimedBy ? " by " + claimedBy : "")) : "Available";
-  claimButton.disabled = claimed || !CLAIMS_API_URL;
-  claimButton.textContent = claimed ? "Already claimed" : (CLAIMS_API_URL ? "Claim this item" : "Claiming not set up");
+function syncItemState(sheetItems) {
+  seedItemState();
+  sheetItems.forEach(setItemState);
 }
 
-function getCardByItemId(itemId) {
-  return document.querySelector('.card[data-item-id="' + cssEscape(itemId) + '"]');
+function setItemState(item) {
+  if (!item || !item.item_id || !itemStateById.has(item.item_id)) {
+    return;
+  }
+
+  itemStateById.set(item.item_id, {
+    item_id: item.item_id,
+    item_name: item.item_name || itemStateById.get(item.item_id).item_name,
+    status: lowerTrim(item.status) === "claimed" ? "Claimed" : "Available",
+    claimed_by: String(item.claimed_by || "").trim(),
+    claimed_at: String(item.claimed_at || "").trim()
+  });
+}
+
+function isClaimed(item) {
+  return lowerTrim(item.status) === "claimed";
+}
+
+function buildClaimedText(item) {
+  return "Claimed" + (item.claimed_by ? " by " + item.claimed_by : "");
+}
+
+function updateClaimedSummary(claimedCount) {
+  const claimedWrap = document.getElementById("claimedWrap");
+  const summary = document.getElementById("claimedSummary");
+  const count = typeof claimedCount === "number" ? claimedCount : document.querySelectorAll("#claimedGrid .card").length;
+  summary.textContent = (claimedWrap.open ? "Hide" : "Show") + " Claimed (" + count + ")";
 }
 
 function updateSyncBanner(message, variant) {
@@ -364,6 +443,10 @@ function cssEscape(value) {
     return window.CSS.escape(value);
   }
   return String(value).replace(/["\\]/g, "\\$&");
+}
+
+function lowerTrim(value) {
+  return String(value || "").trim().toLowerCase();
 }
 </script>
 </body>
